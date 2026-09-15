@@ -140,48 +140,46 @@ fn read_client(
     connections: &mut HashMap<RawFd, Connection>,
 ) {
     let mut request = None;
+    let mut closed = false;
 
     if let Some(connection) = connections.get_mut(&fd) {
         let mut buffer = [0; 4096];
 
-        loop {
-            match connection.stream.read(&mut buffer) {
-                Ok(0) => break,
+        match connection.stream.read(&mut buffer) {
+            Ok(0) => closed = true,
+            Ok(size) => {
+                connection.received.extend_from_slice(&buffer[..size]);
+                connection.last_active = Instant::now();
 
-                Ok(size) => {
-                    connection.received.extend_from_slice(&buffer[..size]);
-                    connection.last_active = Instant::now();
-
-                    match parse_request(&connection.received) {
-                        Ok(parsed) => {
-                            connection.server_index = select_server(
-                                servers,
-                                &connection.server_indices,
-                                parsed.headers.get("host").map(String::as_str),
-                            );
-                            request = Some(parsed);
-                            break;
-                        }
-
-                        Err(error) if crate::is_incomplete_request(&error) => {
-                            continue;
-                        }
-
-                        Err(_) => {
-                            connection.response = crate::make_error_response(
-                                &servers[connection.server_index],
-                                400,
-                                "400 Bad Request",
-                            );
-                            break;
-                        }
+                match parse_request(&connection.received) {
+                    Ok(parsed) => {
+                        connection.server_index = select_server(
+                            servers,
+                            &connection.server_indices,
+                            parsed.headers.get("host").map(String::as_str),
+                        );
+                        request = Some(parsed);
+                    }
+                    Err(error) if crate::is_incomplete_request(&error) => {}
+                    Err(_) => {
+                        connection.response = crate::make_error_response(
+                            &servers[connection.server_index],
+                            400,
+                            "400 Bad Request",
+                        );
                     }
                 }
-
-                Err(error) if error.kind() == ErrorKind::WouldBlock => break,
-                Err(_) => break,
             }
+            Err(error)
+                if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) => {}
+            Err(_) => closed = true,
         }
+    }
+
+    if closed {
+        let _ = epoll.delete(fd);
+        connections.remove(&fd);
+        return;
     }
 
     if let Some(request) = request {
@@ -196,7 +194,13 @@ fn read_client(
 
     if let Some(connection) = connections.get(&fd) {
         if !connection.response.is_empty() {
-            let _ = epoll.modify(fd, (libc::EPOLLOUT | libc::EPOLLRDHUP) as u32);
+            if epoll
+                .modify(fd, (libc::EPOLLOUT | libc::EPOLLRDHUP) as u32)
+                .is_err()
+            {
+                let _ = epoll.delete(fd);
+                connections.remove(&fd);
+            }
         }
     }
 }
@@ -205,17 +209,22 @@ fn write_client(fd: RawFd, epoll: &Epoll, connections: &mut HashMap<RawFd, Conne
     let mut finished = false;
 
     if let Some(connection) = connections.get_mut(&fd) {
-        while connection.sent < connection.response.len() {
+        if connection.sent < connection.response.len() {
             match connection
                 .stream
                 .write(&connection.response[connection.sent..])
             {
-                Ok(size) => connection.sent += size,
-                Err(error) if error.kind() == ErrorKind::WouldBlock => return,
-                Err(_) => {
-                    finished = true;
-                    break;
+                Ok(0) => finished = true,
+                Ok(size) => {
+                    connection.sent += size;
+                    connection.last_active = Instant::now();
                 }
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+                {
+                    return;
+                }
+                Err(_) => finished = true,
             }
         }
 

@@ -135,6 +135,8 @@ pub fn parse_config(content: &str) -> Result<Vec<ServerConfig>, String> {
         return Err("Config file has no server blocks".to_string());
     }
 
+    validate_shared_server_names(&servers)?;
+
     Ok(servers)
 }
 
@@ -196,6 +198,12 @@ fn parse_server_setting(
 
             if port == 0 {
                 return Err(format!("Line {line_number}: port cannot be 0"));
+            }
+
+            if server.ports.contains(&port) {
+                return Err(format!(
+                    "Line {line_number}: duplicate port {port} in server block"
+                ));
             }
 
             server.ports.push(port);
@@ -323,6 +331,34 @@ fn validate_route(route: &Route) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_shared_server_names(servers: &[ServerConfig]) -> Result<(), String> {
+    for (index, server) in servers.iter().enumerate() {
+        for other in &servers[..index] {
+            if server.host != other.host {
+                continue;
+            }
+            for port in &server.ports {
+                if !other.ports.contains(port) {
+                    continue;
+                }
+                for name in &server.server_names {
+                    if other
+                        .server_names
+                        .iter()
+                        .any(|other_name| name.eq_ignore_ascii_case(other_name))
+                    {
+                        return Err(format!(
+                            "Conflicting server name '{name}' on {}:{port}",
+                            server.host
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,22 +388,51 @@ mod tests {
     }
 
     #[test]
-    fn accepts_shared_ports() {
+    fn accepts_shared_ports_with_distinct_names() {
         let config = r#"
             server {
                 host 127.0.0.1
                 port 8080
+                server_name main.local www.main.local
                 root .
             }
 
             server {
                 host 127.0.0.1
                 port 8080
+                server_name second.local alias.local
                 root .
             }
         "#;
 
         assert_eq!(parse_config(config).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn rejects_duplicate_port_in_one_server() {
+        let error =
+            parse_config("server {\nhost 127.0.0.1\nport 8080\nport 8080\nroot .\n}").unwrap_err();
+        assert!(error.contains("duplicate port 8080"));
+    }
+
+    #[test]
+    fn rejects_overlapping_names_on_shared_address() {
+        for name in ["alias.local", "ALIAS.LOCAL"] {
+            let config = format!(
+                "server {{\nhost 127.0.0.1\nport 8080\nport 8081\nroot .\nserver_name main.local alias.local\n}}\nserver {{\nhost 127.0.0.1\nport 8081\nroot .\nserver_name second.local {name}\n}}"
+            );
+            assert!(
+                parse_config(&config)
+                    .unwrap_err()
+                    .contains("Conflicting server name")
+            );
+        }
+    }
+
+    #[test]
+    fn allows_same_name_on_different_addresses() {
+        let config = "server {\nhost 127.0.0.1\nport 8080\nroot .\nserver_name main.local\n}\nserver {\nhost 127.0.0.1\nport 8081\nroot .\nserver_name main.local\n}\nserver {\nhost 127.0.0.2\nport 8080\nroot .\nserver_name main.local\n}";
+        assert_eq!(parse_config(config).unwrap().len(), 3);
     }
 
     #[test]
