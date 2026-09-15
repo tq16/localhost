@@ -41,19 +41,20 @@ pub fn run_cgi(
     request: &Request,
     path_info: &str,
 ) -> Result<CgiOutput, String> {
-    let script_name = script
-        .file_name()
-        .ok_or("CGI script has no file name")?;
+    let script_name = script.file_name().ok_or("CGI script has no file name")?;
 
     let mut command = Command::new(interpreter);
 
     command
         .arg(script_name)
-        .env("REQUEST_METHOD", match &request.method {
-            crate::http::Method::Get => "GET",
-            crate::http::Method::Post => "POST",
-            crate::http::Method::Delete => "DELETE",
-        })
+        .env(
+            "REQUEST_METHOD",
+            match &request.method {
+                crate::http::Method::Get => "GET",
+                crate::http::Method::Post => "POST",
+                crate::http::Method::Delete => "DELETE",
+            },
+        )
         .env("PATH_INFO", path_info)
         .env("CONTENT_LENGTH", request.body.len().to_string())
         .stdin(Stdio::piped())
@@ -97,8 +98,8 @@ fn parse_output(output: &[u8]) -> Result<CgiOutput, String> {
         });
     };
 
-    let headers = std::str::from_utf8(&output[..separator.0])
-        .map_err(|_| "CGI headers are invalid")?;
+    let headers =
+        std::str::from_utf8(&output[..separator.0]).map_err(|_| "CGI headers are invalid")?;
 
     let mut status = "200 OK".to_string();
     let mut content_type = "text/html; charset=utf-8".to_string();

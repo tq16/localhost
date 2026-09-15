@@ -22,12 +22,7 @@ pub enum UploadResult {
     ServerError,
 }
 
-pub fn get_file(
-    root: &str,
-    index: &str,
-    url_path: &str,
-    directory_listing: bool,
-) -> FileResult {
+pub fn get_file(root: &str, index: &str, url_path: &str, directory_listing: bool) -> FileResult {
     let requested_path = if url_path == "/" {
         index
     } else {

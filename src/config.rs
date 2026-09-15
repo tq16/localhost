@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -10,10 +10,12 @@ const MAX_BODY_SIZE: usize = 100 * 1024 * 1024;
 pub struct ServerConfig {
     pub host: String,
     pub ports: Vec<u16>,
+    pub server_names: Vec<String>,
     pub root: String,
     pub index: String,
     pub max_body_size: usize,
     pub routes: Vec<Route>,
+    pub error_pages: HashMap<u16, String>,
 }
 
 impl ServerConfig {
@@ -21,10 +23,12 @@ impl ServerConfig {
         Self {
             host: String::new(),
             ports: Vec::new(),
+            server_names: Vec::new(),
             root: String::new(),
             index: "index.html".to_string(),
             max_body_size: 1024 * 1024,
             routes: Vec::new(),
+            error_pages: HashMap::new(),
         }
     }
 }
@@ -131,8 +135,6 @@ pub fn parse_config(content: &str) -> Result<Vec<ServerConfig>, String> {
         return Err("Config file has no server blocks".to_string());
     }
 
-    validate_no_port_conflicts(&servers)?;
-
     Ok(servers)
 }
 
@@ -142,6 +144,44 @@ fn parse_server_setting(
     values: &[&str],
     line_number: usize,
 ) -> Result<(), String> {
+    if key == "server_name" {
+        server
+            .server_names
+            .extend(values.iter().map(|name| name.to_string()));
+        return Ok(());
+    }
+
+    if key == "error_page" {
+        if values.len() != 2 {
+            return Err(format!(
+                "Line {line_number}: error_page needs a status code and file path"
+            ));
+        }
+
+        let status_code = values[0]
+            .parse::<u16>()
+            .map_err(|_| format!("Line {line_number}: invalid error status code"))?;
+
+        match status_code {
+            400 | 403 | 404 | 405 | 413 | 500 => {}
+            _ => {
+                return Err(format!("Line {line_number}: unsupported error status code"));
+            }
+        }
+
+        if !Path::new(values[1]).is_file() {
+            return Err(format!(
+                "Line {line_number}: error page file does not exist"
+            ));
+        }
+
+        server
+            .error_pages
+            .insert(status_code, values[1].to_string());
+
+        return Ok(());
+    }
+
     if values.len() != 1 {
         return Err(format!("Line {line_number}: {key} needs one value"));
     }
@@ -283,22 +323,6 @@ fn validate_route(route: &Route) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_no_port_conflicts(servers: &[ServerConfig]) -> Result<(), String> {
-    let mut used_addresses = HashSet::new();
-
-    for server in servers {
-        for port in &server.ports {
-            let address = format!("{}:{port}", server.host);
-
-            if !used_addresses.insert(address.clone()) {
-                return Err(format!("Conflicting server address: {address}"));
-            }
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_conflicting_ports() {
+    fn accepts_shared_ports() {
         let config = r#"
             server {
                 host 127.0.0.1
@@ -343,7 +367,23 @@ mod tests {
             }
         "#;
 
-        assert!(parse_config(config).is_err());
+        assert_eq!(parse_config(config).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn parses_multiple_server_names() {
+        let servers = parse_config("server {\nhost 127.0.0.1\nport 8080\nroot .\nserver_name main.local www.main.local\nserver_name alias.local\n}").unwrap();
+        assert_eq!(
+            servers[0].server_names,
+            ["main.local", "www.main.local", "alias.local"]
+        );
+    }
+
+    #[test]
+    fn rejects_empty_server_name() {
+        assert!(
+            parse_config("server {\nhost 127.0.0.1\nport 8080\nroot .\nserver_name\n}").is_err()
+        );
     }
 
     #[test]

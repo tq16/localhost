@@ -15,11 +15,7 @@ impl Route {
             path: path.to_string(),
             root: root.to_string(),
             index: "index.html".to_string(),
-            allowed_methods: vec![
-                "GET".to_string(),
-                "POST".to_string(),
-                "DELETE".to_string(),
-            ],
+            allowed_methods: vec!["GET".to_string(), "POST".to_string(), "DELETE".to_string()],
             redirect: None,
             directory_listing: false,
             cgi: None,
@@ -60,10 +56,7 @@ mod tests {
 
     #[test]
     fn most_specific_route_wins() {
-        let routes = vec![
-            Route::new("/", "www"),
-            Route::new("/images", "www/images"),
-        ];
+        let routes = vec![Route::new("/", "www"), Route::new("/images", "www/images")];
 
         let route = match_route(&routes, "/images/logo.png").unwrap();
 

@@ -3,10 +3,7 @@ pub struct UploadedFile {
     pub data: Vec<u8>,
 }
 
-pub fn parse_multipart(
-    body: &[u8],
-    content_type: &str,
-) -> Result<Vec<UploadedFile>, String> {
+pub fn parse_multipart(body: &[u8], content_type: &str) -> Result<Vec<UploadedFile>, String> {
     let boundary = content_type
         .split(';')
         .find_map(|part| part.trim().strip_prefix("boundary="))
@@ -39,8 +36,8 @@ pub fn parse_multipart(
 
         position += 2;
 
-        let headers_end = find_bytes(&body[position..], b"\r\n\r\n")
-            .ok_or("Multipart headers are incomplete")?;
+        let headers_end =
+            find_bytes(&body[position..], b"\r\n\r\n").ok_or("Multipart headers are incomplete")?;
 
         let headers_end = position + headers_end;
 
@@ -81,7 +78,10 @@ fn find_bytes(data: &[u8], needle: &[u8]) -> Option<usize> {
 
 fn get_filename(headers: &str) -> Option<String> {
     for line in headers.lines() {
-        if !line.to_ascii_lowercase().starts_with("content-disposition:") {
+        if !line
+            .to_ascii_lowercase()
+            .starts_with("content-disposition:")
+        {
             continue;
         }
 

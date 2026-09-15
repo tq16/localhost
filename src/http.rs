@@ -20,8 +20,8 @@ pub struct Request {
 pub fn parse_request(raw: &[u8]) -> Result<Request, String> {
     let header_end = find_header_end(raw).ok_or("Request headers are incomplete")?;
 
-    let header_text = str::from_utf8(&raw[..header_end - 4])
-        .map_err(|_| "Headers are not valid UTF-8")?;
+    let header_text =
+        str::from_utf8(&raw[..header_end - 4]).map_err(|_| "Headers are not valid UTF-8")?;
 
     let mut lines = header_text.split("\r\n");
 
@@ -50,9 +50,7 @@ pub fn parse_request(raw: &[u8]) -> Result<Request, String> {
     let mut headers = HashMap::new();
 
     for line in lines {
-        let (name, value) = line
-            .split_once(':')
-            .ok_or("Invalid header")?;
+        let (name, value) = line.split_once(':').ok_or("Invalid header")?;
 
         let name = name.trim().to_lowercase();
         let value = value.trim().to_string();
@@ -116,11 +114,10 @@ fn decode_chunked_body(raw: &[u8]) -> Result<Vec<u8>, String> {
     let mut position = 0;
 
     loop {
-        let line_end = find_crlf(raw, position)
-            .ok_or("Chunk size line is incomplete")?;
+        let line_end = find_crlf(raw, position).ok_or("Chunk size line is incomplete")?;
 
-        let size_text = str::from_utf8(&raw[position..line_end])
-            .map_err(|_| "Chunk size is invalid")?;
+        let size_text =
+            str::from_utf8(&raw[position..line_end]).map_err(|_| "Chunk size is invalid")?;
 
         let size_text = size_text.split(';').next().unwrap_or("").trim();
 
@@ -138,8 +135,8 @@ fn decode_chunked_body(raw: &[u8]) -> Result<Vec<u8>, String> {
                 return Ok(body);
             }
 
-            let trailer_end = find_header_end(&raw[position..])
-                .ok_or("Chunk trailers are incomplete")?;
+            let trailer_end =
+                find_header_end(&raw[position..]).ok_or("Chunk trailers are incomplete")?;
 
             let _ = trailer_end;
             return Ok(body);
@@ -184,7 +181,8 @@ mod tests {
 
     #[test]
     fn parses_a_post_body_using_content_length() {
-        let raw = b"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 11\r\n\r\nhello world";
+        let raw =
+            b"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 11\r\n\r\nhello world";
 
         let request = parse_request(raw).unwrap();
 
