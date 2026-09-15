@@ -30,8 +30,8 @@ impl ServerConfig {
 }
 
 pub fn load_config(path: &str) -> Result<Vec<ServerConfig>, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|error| format!("Could not read config file: {error}"))?;
+    let content =
+        fs::read_to_string(path).map_err(|error| format!("Could not read config file: {error}"))?;
 
     parse_config(&content)
 }
@@ -70,7 +70,9 @@ pub fn parse_config(content: &str) -> Result<Vec<ServerConfig>, String> {
             }
 
             if !words[1].starts_with('/') {
-                return Err(format!("Line {line_number}: route path must start with '/'"));
+                return Err(format!(
+                    "Line {line_number}: route path must start with '/'"
+                ));
             }
 
             current_route = Some(Route::new(words[1], ""));
@@ -109,9 +111,9 @@ pub fn parse_config(content: &str) -> Result<Vec<ServerConfig>, String> {
         if let Some(route) = current_route.as_mut() {
             parse_route_setting(route, key, values, line_number)?;
         } else {
-            let server = current_server
-                .as_mut()
-                .ok_or_else(|| format!("Line {line_number}: setting must be inside server block"))?;
+            let server = current_server.as_mut().ok_or_else(|| {
+                format!("Line {line_number}: setting must be inside server block")
+            })?;
 
             parse_server_setting(server, key, values, line_number)?;
         }
@@ -169,7 +171,11 @@ fn parse_server_setting(
                 .map_err(|_| format!("Line {line_number}: invalid body size"))?;
         }
 
-        _ => return Err(format!("Line {line_number}: unknown server setting '{key}'")),
+        _ => {
+            return Err(format!(
+                "Line {line_number}: unknown server setting '{key}'"
+            ));
+        }
     }
 
     Ok(())
@@ -208,6 +214,10 @@ fn parse_route_setting(
                     ));
                 }
             };
+        }
+
+        "cgi" if values.len() == 2 => {
+            route.cgi = Some((values[0].to_string(), values[1].to_string()));
         }
 
         _ => return Err(format!("Line {line_number}: invalid route setting '{key}'")),
@@ -259,6 +269,15 @@ fn validate_route(route: &Route) -> Result<(), String> {
 
     if route.allowed_methods.is_empty() {
         return Err(format!("Route {} has no allowed methods", route.path));
+    }
+
+    if let Some((extension, interpreter)) = &route.cgi {
+        if !extension.starts_with('.') || interpreter.is_empty() {
+            return Err(format!(
+                "Invalid CGI configuration for route {}",
+                route.path
+            ));
+        }
     }
 
     Ok(())

@@ -6,6 +6,7 @@ pub struct Route {
     pub allowed_methods: Vec<String>,
     pub redirect: Option<String>,
     pub directory_listing: bool,
+    pub cgi: Option<(String, String)>,
 }
 
 impl Route {
@@ -21,6 +22,7 @@ impl Route {
             ],
             redirect: None,
             directory_listing: false,
+            cgi: None,
         }
     }
 }
